@@ -932,6 +932,51 @@ STATIC_INLINE void jl_array_shrink(jl_array_t *a, size_t dec)
     //if we don't manage this array return
     if (a->flags.how == 0) return;
 
+    int elsz = a->elsize;
+    int newbytes = (a->maxsize - dec) * a->elsize;
+    int oldnbytes = (a->maxsize) * a->elsize;
+    int isbitsunion = jl_array_isbitsunion(a);
+    if (isbitsunion) {
+        newbytes += a->maxsize - dec;
+        oldnbytes += a->maxsize;
+    }
+
+    if (elsz == 1 && !isbitsunion) {
+        newbytes++;
+        oldnbytes++;
+    }
+    char *originalptr = ((char*) a->data) - a->offset * a->elsize;
+    if (a->flags.how == 1) {
+        //this is a julia-allocated buffer that needs to be marked
+    }
+    else if (a->flags.how == 2) {
+        //malloc-allocated pointer this array object manages
+        char *typetagdata;
+        char *newtypetagdata;
+        if (isbitsunion) {
+            typetagdata = (char*)malloc_s(a->nrows);
+            memcpy(typetagdata, jl_array_typetagdata(a), a->nrows);
+        }
+        size_t oldoffsnb = a->offset * elsz;
+        a->data = ((char*)jl_gc_managed_realloc(originalptr, newbytes, oldnbytes,
+                a->flags.isaligned, (jl_value_t*) a)) + oldoffsnb;
+        a->maxsize -= dec;
+        if (isbitsunion) {
+            newtypetagdata = jl_array_typetagdata(a);
+            memcpy(newtypetagdata, typetagdata, a->nrows);
+            free(typetagdata);
+        }
+    }
+    else if (a->flags.how == 3) {
+        //this has has a pointer to the object that owns the data
+    }
+}
+
+STATIC_INLINE void jl_array_shrink_new(jl_array_t *a, size_t dec)
+{
+    //if we don't manage this array return
+    if (a->flags.how == 0) return;
+
     size_t elsz = a->elsize;
     size_t newbytes = (a->maxsize - dec) * a->elsize;
     size_t oldnbytes = (a->maxsize) * a->elsize;
